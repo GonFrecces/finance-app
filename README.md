@@ -1,98 +1,129 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Finance App — API (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST en Node.js + TypeScript que autentica usuarios con JWT y autoriza por rol (`admin` / `user`) la consulta del score financiero de un RUT.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tecnologías
 
-## Description
+| Tecnología | Uso |
+|---|---|
+| Node.js + TypeScript | Runtime y lenguaje |
+| NestJS 11 (`@nestjs/core`, `platform-express`) | Framework HTTP: módulos, controladores, guards y pipes |
+| `@nestjs/jwt` | Firma y verificación de JWT (HS256, expiración 60 min) |
+| `@nestjs/config` | Carga de variables desde `.env` |
+| `class-validator` / `class-transformer` | Validación del body de `POST /login` |
+| `node:crypto` | Hash de contraseñas con `scrypt` y score con `SHA-256` |
+| Jest + Supertest | Tests e2e |
+| ESLint + Prettier | Lint y formato |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Cómo levantar el proyecto
 
-## Project setup
+Requisitos: Node.js 20 o superior y npm.
 
 ```bash
-$ yarn install
+npm install
+cp .env.example .env    # completar JWT_SECRET y SCORE_SALT
+npm run start:dev       # http://localhost:3000 (modo watch)
 ```
 
-## Compile and run the project
+Variables de entorno (`.env`):
+
+| Variable | Descripción | Default |
+|---|---|---|
+| `PORT` | Puerto HTTP | `3000` |
+| `JWT_SECRET` | Secreto para firmar los JWT. **Obligatorio**: la app no arranca sin él | — |
+| `SCORE_SALT` | Sal del hash que calcula el score | `''` |
+| `FRONTEND_URL` | Origen permitido por CORS (la SPA) | `http://localhost:5173` |
+
+Otros scripts:
 
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+npm run build && npm run start:prod   # compilar a dist/ y ejecutar
+npm run test:e2e                      # tests e2e (login, 401, 403, 400, score)
+npm run lint                          # eslint --fix
 ```
 
-## Run tests
+## Endpoints
 
-```bash
-# unit tests
-$ yarn run test
+### `POST /login` (público)
 
-# e2e tests
-$ yarn run test:e2e
+Autentica contra usuarios mock definidos en `src/users/users.data.ts` (sin base de datos; las contraseñas se guardan como hash `scrypt`).
 
-# test coverage
-$ yarn run test:cov
+```http
+POST /login
+Content-Type: application/json
+
+{ "username": "juan", "password": "User123!" }
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
+```json
+{ "access_token": "<jwt>" }
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Payload del JWT: `sub` (ID del usuario), `role` (`admin` | `user`) y `rut` (normalizado, **solo** si el rol es `user`). Credenciales inválidas responden `401 Invalid credentials` sin indicar si falló el usuario o la contraseña.
 
-## Resources
+### `GET /score/:rut` (requiere `Authorization: Bearer <jwt>`)
 
-Check out a few resources that may come in handy when working with NestJS:
+```json
+{
+  "rut": "12.345.678-5",
+  "score": 73,
+  "fecha": "2025-06-27T14:35:00Z"
+}
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+El RUT se acepta con o sin puntos y guion (`12.345.678-5`, `12345678-5`, `123456785`).
 
-## Support
+| Status | Causa |
+|---|---|
+| `200` | OK |
+| `400` | RUT con formato o dígito verificador inválido |
+| `401` | Token ausente, con firma inválida, expirado o con claims incorrectos |
+| `403` | Rol `user` consultando un RUT distinto al de su token |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Seguridad: guards y pipe
 
-## Stay in touch
+`GET /score/:rut` aplica, en este orden (`src/score/score.controller.ts`):
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+1. **`JwtAuthGuard`** (autenticación): exige `Bearer`, verifica firma y `exp` con `verifyAsync` restringido a `HS256` y valida la forma de los claims (`sub`, `role`, `exp`, y `rut` si es `user`). Deja el payload en `request.user`.
+2. **`RolesGuard`** (autorización por rol): lee los roles declarados con `@Roles('admin', 'user')` vía `Reflector`.
+3. **`RutOwnershipGuard`** (autorización por recurso): `admin` pasa siempre; `user` solo si el RUT de la URL, normalizado, coincide con el `rut` del token.
+4. **`RutValidationPipe`**: valida formato y dígito verificador (módulo 11) y entrega el RUT normalizado al handler.
 
-## License
+## Score determinista
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+`ScoreService.computeScore` calcula `SHA-256(SCORE_SALT + ":" + rutNormalizado)`, toma los primeros 4 bytes como entero sin signo y aplica `% 101`, obteniendo un valor en `[0, 100]`. El mismo RUT siempre produce el mismo score, RUTs distintos se distribuyen de forma uniforme, y la sal impide que un tercero reproduzca el score conociendo solo el algoritmo. Al normalizar antes de hashear, `12.345.678-5` y `123456785` dan el mismo resultado.
+
+## Estructura
+
+```
+src/
+├── main.ts                       # bootstrap: CORS y ValidationPipe global
+├── app.module.ts                 # ConfigModule global + AuthModule + ScoreModule
+├── auth/
+│   ├── auth.controller.ts        # POST /login
+│   ├── auth.service.ts           # verificación scrypt y firma del JWT
+│   ├── auth.module.ts            # JwtModule (HS256, 60m) y exports de guards
+│   ├── decorators/roles.decorator.ts
+│   ├── dto/login.dto.ts
+│   └── guards/
+│       ├── jwt-auth.guard.ts     # autenticación
+│       ├── roles.guard.ts        # autorización por rol
+│       └── rut-ownership.guard.ts# autorización por RUT
+├── score/
+│   ├── score.controller.ts       # GET /score/:rut
+│   ├── score.service.ts          # algoritmo determinista
+│   └── score.module.ts
+├── users/
+│   ├── users.data.ts             # usuarios mock con hash scrypt
+│   ├── users.service.ts
+│   └── users.module.ts
+└── common/
+    ├── rut.util.ts               # normalizar, validar DV, formatear
+    └── pipes/rut-validation.pipe.ts
+test/
+└── app.e2e-spec.ts               # flujo completo con Supertest
+```
+
+## Uso de herramientas de IA
+
+El detalle de qué herramientas se usaron y qué partes del código apoyaron está en [ai_interactions.md](./ai_interactions.md).
