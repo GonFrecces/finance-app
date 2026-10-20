@@ -12,6 +12,7 @@ export interface JwtPayload {
   role: 'admin' | 'user';
   iat?: number;
   exp?: number;
+  rut?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -32,23 +33,28 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
 
+    let payload: JwtPayload;
+
+    // verifyAsync valida firma y expiración (exp).
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         algorithms: ['HS256'],
       });
-
-      if (
-        typeof payload.sub !== 'string' ||
-        !['admin', 'user'].includes(payload.role) ||
-        typeof payload.exp !== 'number'
-      ) {
-        throw new UnauthorizedException('Invalid JWT claims');
-      }
-
-      request.user = payload;
-      return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
+
+    // Validación de claims fuera del try para no perder el mensaje.
+    if (
+      typeof payload.sub !== 'string' ||
+      !['admin', 'user'].includes(payload.role) ||
+      typeof payload.exp !== 'number' ||
+      (payload.role === 'user' && typeof payload.rut !== 'string')
+    ) {
+      throw new UnauthorizedException('Invalid JWT claims');
+    }
+
+    request.user = payload;
+    return true;
   }
 }
